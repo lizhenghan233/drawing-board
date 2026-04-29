@@ -1,10 +1,34 @@
 {
   "users": [
-    { "id": 1, "username": "alice", "password": "123456", "token": "mock-token-alice" },
-    { "id": 2, "username": "bob", "password": "123456", "token": "mock-token-bob" }
+    {
+      "id": "1",
+      "username": "alice",
+      "password": "123456",
+      "token": "mock-token-alice"
+    },
+    {
+      "id": "2",
+      "username": "bob",
+      "password": "123456",
+      "token": "mock-token-bob"
+    }
   ],
   "rooms": [
-    { "id": 1, "name": "测试房间1", "createdBy": 1 },
-    { "id": 2, "name": "测试房间2", "createdBy": 2 }
-  ]
+    {
+      "id": "1",
+      "name": "测试房间1",
+      "createdBy": 1
+    },
+    {
+      "id": "2",
+      "name": "测试房间2",
+      "createdBy": 2
+    },
+    {
+      "name": "1111",
+      "createdBy": 1,
+      "id": "LXra34kPaqI"
+    }
+  ],
+  "$schema": "./node_modules/json-server/schema.json"
 }

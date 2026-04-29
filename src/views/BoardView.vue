@@ -20,12 +20,19 @@
         <div class="chat">
           <h4>聊天</h4>
           <div class="messages" ref="chatContainer">
-            <div v-for="(msg, idx) in messages" :key="idx">
+            <div v-for="(msg, idx) in messages" :key="idx" class="message-item">
               <strong>{{ msg.user }}:</strong> {{ msg.text }}
+              <span class="time">{{ msg.time }}</span>
             </div>
           </div>
-          <input v-model="newMessage" @keyup.enter="sendMessage" placeholder="输入消息..." />
-          <button @click="sendMessage">发送</button>
+          <div class="chat-input-area">
+            <input
+              v-model="newMessage"
+              @keyup.enter="sendMessage"
+              placeholder="输入消息，回车发送"
+            />
+            <button @click="sendMessage">发送</button>
+          </div>
         </div>
         <div class="members">
           <h4>在线成员</h4>
@@ -45,24 +52,46 @@ import { useUserStore } from '@/stores/userStore'
 import TempCanvas from '@/components/TempCanvas.vue'
 import wsService from '@/services/websocket'
 
+// ---------- 类型定义 ----------
+interface DrawingData {
+  color: string
+  lineWidth: number
+  points?: number[][]
+  message?: string
+}
+
+interface ChatMessage {
+  user: string
+  text: string
+  time: string
+}
+
+interface ChatData {
+  username: string
+  message: string
+}
+
+interface Member {
+  id: number
+  name: string
+}
+// -----------------------------
+
 const route = useRoute()
 const userStore = useUserStore()
 const roomId = route.params.roomId as string
 
-// 画板引用
 const canvasRef = ref<InstanceType<typeof TempCanvas> | null>(null)
-
-// 工具栏状态
 const color = ref('#000000')
 const lineWidth = ref(2)
 
 // 聊天
-const messages = ref<{ user: string; text: string }[]>([])
+const messages = ref<ChatMessage[]>([])
 const newMessage = ref('')
 const chatContainer = ref<HTMLElement>()
 
-// 在线成员（示例，实际应该通过 WebSocket 更新）
-const members = ref([
+// 在线成员（示例）
+const members = ref<Member[]>([
   { id: 1, name: 'Alice' },
   { id: 2, name: 'Bob' },
 ])
@@ -72,7 +101,7 @@ const handleColorChange = () => {
   canvasRef.value?.setColor(color.value)
 }
 const handleWidthChange = () => {
-  canvasRef.value?.setLineWidth(parseInt(lineWidth.value as any))
+  canvasRef.value?.setLineWidth(lineWidth.value)
 }
 const handleClear = () => {
   canvasRef.value?.clearCanvas()
@@ -84,23 +113,15 @@ const handleRedo = () => {
   canvasRef.value?.redo()
 }
 
-// 本地绘制时，通过 WebSocket 广播绘图数据
-const onLocalDraw = (drawData: any) => {
+// 本地绘图广播
+const onLocalDraw = (drawData: DrawingData) => {
   wsService.send('draw', drawData)
 }
 
-// 发送聊天消息
-const sendMessage = () => {
-  if (newMessage.value.trim()) {
-    wsService.send('chat', { message: newMessage.value })
-    // 本地立即显示（避免等待服务器回显，若服务器会广播则会导致重复，可根据需要调整）
-    messages.value.push({
-      user: userStore.user?.username || '我',
-      text: newMessage.value,
-    })
-    newMessage.value = ''
-    scrollChatToBottom()
-  }
+// 获取当前时间
+const getCurrentTime = () => {
+  const now = new Date()
+  return now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
 }
 
 // 滚动聊天到底部
@@ -112,29 +133,46 @@ const scrollChatToBottom = () => {
   })
 }
 
-// 接收聊天消息的处理
-const handleChatMessage = (data: any) => {
-  // data 结构: { username: string, message: string }
+// 发送消息
+const sendMessage = () => {
+  const text = newMessage.value.trim()
+  if (!text) return
+
+  const time = getCurrentTime()
   messages.value.push({
-    user: data.username,
-    text: data.message,
+    user: userStore.user?.username || '我',
+    text,
+    time,
+  })
+  scrollChatToBottom()
+  wsService.send('chat', { message: text })
+  newMessage.value = ''
+}
+
+// 接收聊天消息（参数为 unknown，内部断言为 ChatData）
+const handleChatMessage = (data: unknown) => {
+  const chatData = data as ChatData
+  const time = getCurrentTime()
+  messages.value.push({
+    user: chatData.username,
+    text: chatData.message,
+    time,
   })
   scrollChatToBottom()
 }
 
-// 接收绘图消息（待角色C提供远程绘制接口）
-const handleDrawMessage = (data: any) => {
-  console.log('收到远端绘图数据', data)
-  // TODO: 调用画板组件的远程绘制方法，例如 canvasRef.value?.drawRemote(data)
+// 接收绘图消息（参数为 unknown，内部断言为 DrawingData）
+const handleDrawMessage = (data: unknown) => {
+  const drawData = data as DrawingData & { userId?: number }
+  console.log('收到远端绘图数据', drawData)
+  // TODO: canvasRef.value?.drawRemote(drawData)
 }
 
-// WebSocket 连接与事件注册
+// WebSocket 连接
 onMounted(() => {
   const userId = userStore.user?.id
   const token = userStore.token
   if (userId && token) {
-    // 连接后端 WebSocket（角色A需提供实际地址）
-    // 如果后端未就绪，可以暂时注释，或者使用测试地址
     wsService.connect(roomId, Number(userId), token)
     wsService.on('chat', handleChatMessage)
     wsService.on('draw', handleDrawMessage)
@@ -151,11 +189,13 @@ onUnmounted(() => {
 </script>
 
 <style scoped>
+/* 样式保持不变，与之前一致 */
 .board {
   display: flex;
   flex-direction: column;
   height: 100vh;
   padding: 10px;
+  box-sizing: border-box;
 }
 .toolbar {
   display: flex;
@@ -170,6 +210,7 @@ onUnmounted(() => {
   display: flex;
   flex: 1;
   gap: 20px;
+  min-height: 0;
 }
 .canvas-container {
   flex: 3;
@@ -177,12 +218,16 @@ onUnmounted(() => {
   border: 1px solid #ddd;
   border-radius: 8px;
   overflow: auto;
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
 .sidebar {
   flex: 1;
   display: flex;
   flex-direction: column;
   gap: 20px;
+  min-width: 200px;
 }
 .chat,
 .members {
@@ -190,20 +235,50 @@ onUnmounted(() => {
   border-radius: 8px;
   padding: 10px;
   background: #fafafa;
+  display: flex;
+  flex-direction: column;
+}
+.chat {
+  flex: 2;
+}
+.members {
+  flex: 1;
 }
 .messages {
-  height: 300px;
+  flex: 1;
   overflow-y: auto;
   border: 1px solid #eee;
   margin-bottom: 10px;
   padding: 5px;
+  min-height: 200px;
+  max-height: 300px;
 }
-.chat input {
-  width: calc(100% - 60px);
-  margin-right: 5px;
+.message-item {
+  margin-bottom: 6px;
+  word-break: break-word;
+}
+.time {
+  font-size: 11px;
+  color: #888;
+  margin-left: 8px;
+}
+.chat-input-area {
+  display: flex;
+  gap: 5px;
+}
+.chat-input-area input {
+  flex: 1;
+  padding: 5px;
+}
+.chat-input-area button {
+  padding: 5px 12px;
 }
 .members ul {
   list-style: none;
   padding: 0;
+  margin: 0;
+}
+.members li {
+  padding: 4px 0;
 }
 </style>

@@ -1,10 +1,11 @@
-<!-- src/views/RoomsView.vue -->
 <template>
   <div class="rooms-container">
     <h2>房间列表</h2>
     <div class="create-room">
-      <input v-model="newRoomName" placeholder="新房间名称" />
-      <button @click="handleCreateRoom">创建房间</button>
+      <input v-model="newRoomName" placeholder="新房间名称" :disabled="loading" />
+      <button @click="handleCreateRoom" :disabled="loading">
+        {{ loading ? '创建中...' : '创建房间' }}
+      </button>
     </div>
     <ul class="room-list">
       <li v-for="room in roomStore.rooms" :key="room.id">
@@ -21,36 +22,46 @@ import { ref, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { useRoomStore } from '@/stores/roomStore'
 import { useUserStore } from '@/stores/userStore'
+import { showToast } from '@/composables/useToast'
 
 const newRoomName = ref('')
+const loading = ref(false)
 const router = useRouter()
 const roomStore = useRoomStore()
 const userStore = useUserStore()
 
-// 加载房间列表
 onMounted(async () => {
-  await roomStore.fetchRooms()
+  try {
+    await roomStore.fetchRooms()
+  } catch {
+    showToast('加载房间列表失败', 'error')
+  }
 })
 
-// 创建房间
 async function handleCreateRoom() {
   if (!newRoomName.value.trim()) {
-    alert('请输入房间名称')
+    showToast('请输入房间名称', 'error')
     return
   }
   const userId = userStore.user?.id
   if (!userId) {
-    alert('未登录，请重新登录')
+    showToast('未登录，请重新登录', 'error')
     router.push('/login')
     return
   }
-  // 注意：json-server 期望 createdBy 是数字，但用户数据的 id 是字符串，需要转换
-  const createdBy = typeof userId === 'string' ? parseInt(userId) : userId
-  await roomStore.addRoom(newRoomName.value, createdBy)
-  newRoomName.value = '' // 清空输入框
+  loading.value = true
+  try {
+    const createdBy = typeof userId === 'string' ? parseInt(userId) : userId
+    await roomStore.addRoom(newRoomName.value, createdBy)
+    newRoomName.value = ''
+    showToast('房间创建成功', 'success')
+  } catch {
+    showToast('创建房间失败', 'error')
+  } finally {
+    loading.value = false
+  }
 }
 
-// 加入房间
 function joinRoom(roomId: number) {
   router.push(`/board/${roomId}`)
 }

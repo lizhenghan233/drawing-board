@@ -1,11 +1,11 @@
-<!-- src/views/LoginView.vue -->
 <template>
   <div class="login-container">
     <h2>多人绘图白板 - 登录</h2>
-    <input v-model="username" placeholder="用户名" />
-    <input v-model="password" type="password" placeholder="密码" />
-    <button @click="handleLogin">登录</button>
-    <p v-if="errorMsg" class="error">{{ errorMsg }}</p>
+    <input v-model="username" placeholder="用户名" :disabled="loading" />
+    <input v-model="password" type="password" placeholder="密码" :disabled="loading" />
+    <button @click="handleLogin" :disabled="loading">
+      {{ loading ? '登录中...' : '登录' }}
+    </button>
   </div>
 </template>
 
@@ -16,17 +16,21 @@ import { useUserStore } from '@/stores/userStore'
 
 const username = ref('')
 const password = ref('')
-const errorMsg = ref('')
+const loading = ref(false)
 const router = useRouter()
 const userStore = useUserStore()
 
 async function handleLogin() {
-  errorMsg.value = ''
+  if (!username.value.trim() || !password.value.trim()) {
+    const { showToast } = await import('@/composables/useToast')
+    showToast('请输入用户名和密码', 'error')
+    return
+  }
+  loading.value = true
   const success = await userStore.login(username.value, password.value)
+  loading.value = false
   if (success) {
     router.push('/rooms')
-  } else {
-    errorMsg.value = '用户名或密码错误'
   }
 }
 </script>
@@ -44,8 +48,5 @@ button {
   margin: 10px 0;
   padding: 8px;
   box-sizing: border-box;
-}
-.error {
-  color: red;
 }
 </style>

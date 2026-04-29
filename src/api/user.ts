@@ -1,5 +1,5 @@
 // src/api/user.ts
-const API_BASE = 'http://localhost:3001'
+import { get } from './request'
 
 export interface User {
   id: string
@@ -7,15 +7,18 @@ export interface User {
   token: string
 }
 
-export async function login(username: string, password: string): Promise<User | null> {
-  // 获取所有用户
-  const res = await fetch(`${API_BASE}/users`)
-  const users = await res.json()
-  // 在前端查找匹配的用户名和密码
-  const found = users.find((u: any) => u.username === username && u.password === password)
-  if (found) {
-    // 返回需要的用户信息（不包含密码）
-    return { id: found.id, username: found.username, token: found.token }
+interface JsonUser {
+  id: string
+  username: string
+  password: string
+  token: string
+}
+
+export async function login(username: string, password: string): Promise<User> {
+  const users = await get<JsonUser[]>('/users')
+  const found = users.find((u) => u.username === username && u.password === password)
+  if (!found) {
+    throw new Error('用户名或密码错误')
   }
-  return null
+  return { id: found.id, username: found.username, token: found.token }
 }

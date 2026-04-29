@@ -2,20 +2,24 @@
 import { defineStore } from 'pinia'
 import { ref } from 'vue'
 import { login as apiLogin, type User } from '@/api/user'
+import { showToast } from '@/composables/useToast'
 
 export const useUserStore = defineStore('user', () => {
   const user = ref<User | null>(null)
   const token = ref<string>('')
 
   const login = async (username: string, password: string) => {
-    const loggedUser = await apiLogin(username, password)
-    if (loggedUser) {
+    try {
+      const loggedUser = await apiLogin(username, password)
       user.value = loggedUser
       token.value = loggedUser.token
       localStorage.setItem('token', loggedUser.token)
       return true
+    } catch (error) {
+      const message = error instanceof Error ? error.message : '登录失败'
+      showToast(message, 'error')
+      return false
     }
-    return false
   }
 
   const logout = () => {
@@ -24,7 +28,6 @@ export const useUserStore = defineStore('user', () => {
     localStorage.removeItem('token')
   }
 
-  // 页面刷新时恢复 token（可选，后续可用于自动登录）
   const restoreToken = () => {
     const t = localStorage.getItem('token')
     if (t) token.value = t
