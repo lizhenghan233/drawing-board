@@ -26,7 +26,8 @@ class WebSocketService {
   private reconnectTimer: number | null = null
 
   connect(roomId: string, userId: number, token: string, wsUrl?: string) {
-    const url = wsUrl || `ws://localhost:8080/ws?roomId=${roomId}&userId=${userId}&token=${token}`
+    const baseUrl = wsUrl || import.meta.env.VITE_WS_URL || 'ws://localhost:8080/ws'
+    const url = `${baseUrl}?roomId=${roomId}&userId=${userId}&token=${token}`
     this.config = { url, roomId, userId, token }
     this.doConnect()
   }

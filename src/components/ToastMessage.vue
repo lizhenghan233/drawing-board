@@ -8,7 +8,7 @@
 </template>
 
 <script setup lang="ts">
-import { useToast } from '@/composables/useToast'
+import { useToast } from '@/composables/use-toast'
 
 const { toastVisible, toastMessage, toastType } = useToast()
 </script>

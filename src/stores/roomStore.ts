@@ -1,7 +1,8 @@
 // src/stores/roomStore.ts
 import { defineStore } from 'pinia'
 import { ref } from 'vue'
-import { getRooms, createRoom, type Room } from '@/api/room'
+import { getRooms, createRoom } from '@/api/room'
+import type { Room } from '@/types'
 
 export const useRoomStore = defineStore('room', () => {
   const rooms = ref<Room[]>([])
@@ -13,7 +14,7 @@ export const useRoomStore = defineStore('room', () => {
 
   const addRoom = async (name: string, createdBy: number) => {
     const newRoom = await createRoom(name, createdBy)
-    rooms.value.push(newRoom) // 更新本地列表
+    if (newRoom) rooms.value.push(newRoom)
     return newRoom
   }
 

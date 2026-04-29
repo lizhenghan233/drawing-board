@@ -14,7 +14,7 @@
     <!-- 主体区域 -->
     <div class="main-area">
       <div class="canvas-container">
-        <TempCanvas ref="canvasRef" :width="800" :height="500" @draw="onLocalDraw" />
+        <TempCanvas ref="canvasRef" @draw="onLocalDraw" />
       </div>
       <div class="sidebar">
         <div class="chat">
@@ -28,10 +28,10 @@
           <div class="chat-input-area">
             <input
               v-model="newMessage"
-              @keyup.enter="sendMessage"
+              @keyup.enter="handleSend"
               placeholder="输入消息，回车发送"
             />
-            <button @click="sendMessage">发送</button>
+            <button @click="handleSend">发送</button>
           </div>
         </div>
         <div class="members">
@@ -46,150 +46,88 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted, onUnmounted, nextTick } from 'vue'
+import { ref, onMounted, onUnmounted } from 'vue'
 import { useRoute } from 'vue-router'
 import { useUserStore } from '@/stores/userStore'
 import TempCanvas from '@/components/TempCanvas.vue'
-import wsService from '@/services/websocket'
-
-// ---------- 类型定义 ----------
-interface DrawingData {
-  color: string
-  lineWidth: number
-  points?: number[][]
-  message?: string
-}
-
-interface ChatMessage {
-  user: string
-  text: string
-  time: string
-}
-
-interface ChatData {
-  username: string
-  message: string
-}
-
-interface Member {
-  id: number
-  name: string
-}
-// -----------------------------
+import { useWebSocket } from '@/composables/use-websocket'
+import { useChat } from '@/composables/use-chat'
+import type { DrawingData } from '@/types'
 
 const route = useRoute()
 const userStore = useUserStore()
 const roomId = route.params.roomId as string
+const userId = userStore.user?.id ? Number(userStore.user.id) : 0
+const token = userStore.token
 
+// 画板引用与工具栏
 const canvasRef = ref<InstanceType<typeof TempCanvas> | null>(null)
 const color = ref('#000000')
 const lineWidth = ref(2)
 
+const handleColorChange = () => canvasRef.value?.setColor(color.value)
+const handleWidthChange = () => canvasRef.value?.setLineWidth(lineWidth.value)
+const handleClear = () => canvasRef.value?.clearCanvas()
+const handleUndo = () => canvasRef.value?.undo()
+const handleRedo = () => canvasRef.value?.redo()
+
+// 本地绘图广播
+const onLocalDraw = (drawData: DrawingData) => {
+  ws.send('draw', drawData)
+}
+
+// WebSocket
+const ws = useWebSocket()
+
 // 聊天
-const messages = ref<ChatMessage[]>([])
-const newMessage = ref('')
-const chatContainer = ref<HTMLElement>()
+const { messages, newMessage, chatContainer, addMessage, sendMessage } = useChat()
+
+// 通过 WebSocket 发送聊天消息
+const sendChatMessage = (text: string) => {
+  ws.send('chat', { message: text })
+}
+
+// 模板中调用的发送函数（不接收事件参数）
+const handleSend = () => {
+  sendMessage(sendChatMessage)
+}
+
+// 接收聊天消息
+const handleChatMessage = (data: unknown) => {
+  const { username, message } = data as { username: string; message: string }
+  addMessage(username, message)
+}
+
+// 接收绘图消息（待实现远程绘制）
+const handleDrawMessage = (data: unknown) => {
+  console.log('收到远端绘图数据', data)
+  // TODO: canvasRef.value?.drawRemote(data)
+}
 
 // 在线成员（示例）
-const members = ref<Member[]>([
+const members = ref([
   { id: 1, name: 'Alice' },
   { id: 2, name: 'Bob' },
 ])
 
-// 工具栏方法
-const handleColorChange = () => {
-  canvasRef.value?.setColor(color.value)
-}
-const handleWidthChange = () => {
-  canvasRef.value?.setLineWidth(lineWidth.value)
-}
-const handleClear = () => {
-  canvasRef.value?.clearCanvas()
-}
-const handleUndo = () => {
-  canvasRef.value?.undo()
-}
-const handleRedo = () => {
-  canvasRef.value?.redo()
-}
-
-// 本地绘图广播
-const onLocalDraw = (drawData: DrawingData) => {
-  wsService.send('draw', drawData)
-}
-
-// 获取当前时间
-const getCurrentTime = () => {
-  const now = new Date()
-  return now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
-}
-
-// 滚动聊天到底部
-const scrollChatToBottom = () => {
-  nextTick(() => {
-    if (chatContainer.value) {
-      chatContainer.value.scrollTop = chatContainer.value.scrollHeight
-    }
-  })
-}
-
-// 发送消息
-const sendMessage = () => {
-  const text = newMessage.value.trim()
-  if (!text) return
-
-  const time = getCurrentTime()
-  messages.value.push({
-    user: userStore.user?.username || '我',
-    text,
-    time,
-  })
-  scrollChatToBottom()
-  wsService.send('chat', { message: text })
-  newMessage.value = ''
-}
-
-// 接收聊天消息（参数为 unknown，内部断言为 ChatData）
-const handleChatMessage = (data: unknown) => {
-  const chatData = data as ChatData
-  const time = getCurrentTime()
-  messages.value.push({
-    user: chatData.username,
-    text: chatData.message,
-    time,
-  })
-  scrollChatToBottom()
-}
-
-// 接收绘图消息（参数为 unknown，内部断言为 DrawingData）
-const handleDrawMessage = (data: unknown) => {
-  const drawData = data as DrawingData & { userId?: number }
-  console.log('收到远端绘图数据', drawData)
-  // TODO: canvasRef.value?.drawRemote(drawData)
-}
-
-// WebSocket 连接
 onMounted(() => {
-  const userId = userStore.user?.id
-  const token = userStore.token
   if (userId && token) {
-    wsService.connect(roomId, Number(userId), token)
-    wsService.on('chat', handleChatMessage)
-    wsService.on('draw', handleDrawMessage)
+    ws.connect(roomId, userId, token)
+    ws.on('chat', handleChatMessage)
+    ws.on('draw', handleDrawMessage)
   } else {
     console.warn('用户未登录，无法连接 WebSocket')
   }
 })
 
 onUnmounted(() => {
-  wsService.off('chat', handleChatMessage)
-  wsService.off('draw', handleDrawMessage)
-  wsService.disconnect()
+  ws.off('chat', handleChatMessage)
+  ws.off('draw', handleDrawMessage)
+  ws.disconnect()
 })
 </script>
 
 <style scoped>
-/* 样式保持不变，与之前一致 */
 .board {
   display: flex;
   flex-direction: column;

@@ -22,7 +22,7 @@ const userStore = useUserStore()
 
 async function handleLogin() {
   if (!username.value.trim() || !password.value.trim()) {
-    const { showToast } = await import('@/composables/useToast')
+    const { showToast } = await import('@/composables/use-toast')
     showToast('请输入用户名和密码', 'error')
     return
   }

@@ -1,8 +1,9 @@
 // src/stores/userStore.ts
 import { defineStore } from 'pinia'
 import { ref } from 'vue'
-import { login as apiLogin, type User } from '@/api/user'
-import { showToast } from '@/composables/useToast'
+import { login as apiLogin } from '@/api/user'
+import { showToast } from '@/composables/use-toast'
+import type { User } from '@/types'
 
 export const useUserStore = defineStore('user', () => {
   const user = ref<User | null>(null)
@@ -14,6 +15,7 @@ export const useUserStore = defineStore('user', () => {
       user.value = loggedUser
       token.value = loggedUser.token
       localStorage.setItem('token', loggedUser.token)
+      showToast('登录成功', 'success')
       return true
     } catch (error) {
       const message = error instanceof Error ? error.message : '登录失败'

@@ -22,7 +22,7 @@ import { ref, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { useRoomStore } from '@/stores/roomStore'
 import { useUserStore } from '@/stores/userStore'
-import { showToast } from '@/composables/useToast'
+import { showToast } from '@/composables/use-toast'
 
 const newRoomName = ref('')
 const loading = ref(false)

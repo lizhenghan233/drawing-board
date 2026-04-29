@@ -16,10 +16,10 @@ export async function request<T = unknown>(url: string, options: RequestOptions 
     return data as T
   } catch (error) {
     if (showError) {
-      const { showToast } = await import('@/composables/useToast')
+      const { showToast } = await import('@/composables/use-toast')
       showToast(error instanceof Error ? error.message : '网络请求失败', 'error')
     }
-    throw error // 抛出异常，让上层处理
+    throw error
   }
 }
 

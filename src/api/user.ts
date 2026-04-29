@@ -1,18 +1,6 @@
 // src/api/user.ts
 import { get } from './request'
-
-export interface User {
-  id: string
-  username: string
-  token: string
-}
-
-interface JsonUser {
-  id: string
-  username: string
-  password: string
-  token: string
-}
+import type { JsonUser, User } from '@/types'
 
 export async function login(username: string, password: string): Promise<User> {
   const users = await get<JsonUser[]>('/users')

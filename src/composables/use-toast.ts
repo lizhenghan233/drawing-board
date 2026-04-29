@@ -1,4 +1,4 @@
-// src/composables/useToast.ts
+// src/composables/use-toast.ts
 import { ref } from 'vue'
 
 const toastVisible = ref(false)
