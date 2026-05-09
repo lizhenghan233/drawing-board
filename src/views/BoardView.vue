@@ -9,12 +9,17 @@
       <button @click="handleClear">清屏</button>
       <button @click="handleUndo">撤销</button>
       <button @click="handleRedo">重做</button>
+      <label>工具：</label>
+      <button @click="setTool('pen')">画笔</button>
+      <button @click="setTool('rect')">矩形</button>
+      <button @click="setTool('circle')">圆形</button>
+      <button @click="setTool('text')">文本</button>
     </div>
 
     <!-- 主体区域 -->
     <div class="main-area">
       <div class="canvas-container">
-        <TempCanvas ref="canvasRef" @draw="onLocalDraw" />
+        <DrawingCanvas ref="canvasRef" :userId="userId" @draw="onLocalDraw" />
       </div>
       <div class="sidebar">
         <div class="chat">
@@ -49,7 +54,7 @@
 import { ref, onMounted, onUnmounted } from 'vue'
 import { useRoute } from 'vue-router'
 import { useUserStore } from '@/stores/userStore'
-import TempCanvas from '@/components/TempCanvas.vue'
+import DrawingCanvas from '@/components/DrawingCanvas.vue'
 import { useWebSocket } from '@/composables/use-websocket'
 import { useChat } from '@/composables/use-chat'
 import type { DrawingData } from '@/types'
@@ -61,7 +66,7 @@ const userId = userStore.user?.id ? Number(userStore.user.id) : 0
 const token = userStore.token
 
 // 画板引用与工具栏
-const canvasRef = ref<InstanceType<typeof TempCanvas> | null>(null)
+const canvasRef = ref<InstanceType<typeof DrawingCanvas> | null>(null)
 const color = ref('#000000')
 const lineWidth = ref(2)
 
@@ -70,6 +75,10 @@ const handleWidthChange = () => canvasRef.value?.setLineWidth(lineWidth.value)
 const handleClear = () => canvasRef.value?.clearCanvas()
 const handleUndo = () => canvasRef.value?.undo()
 const handleRedo = () => canvasRef.value?.redo()
+
+const setTool = (tool: 'pen' | 'rect' | 'circle' | 'text') => {
+  canvasRef.value?.setTool(tool)
+}
 
 // 本地绘图广播
 const onLocalDraw = (drawData: DrawingData) => {
@@ -100,8 +109,10 @@ const handleChatMessage = (data: unknown) => {
 
 // 接收绘图消息（待实现远程绘制）
 const handleDrawMessage = (data: unknown) => {
-  console.log('收到远端绘图数据', data)
-  // TODO: canvasRef.value?.drawRemote(data)
+  const drawData = data as DrawAction
+  if (drawData.userId !== userId) {
+    canvasRef.value?.drawRemote(drawData)
+  }
 }
 
 // 在线成员（示例）
