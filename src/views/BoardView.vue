@@ -59,6 +59,11 @@ import { useWebSocket } from '@/composables/use-websocket'
 import { useChat } from '@/composables/use-chat'
 import type { DrawingData } from '@/types'
 
+// 假设 DrawAction 类型已在全局定义，若无则定义
+interface DrawAction extends DrawingData {
+  userId?: number
+}
+
 const route = useRoute()
 const userStore = useUserStore()
 const roomId = route.params.roomId as string
@@ -96,9 +101,10 @@ const sendChatMessage = (text: string) => {
   ws.send('chat', { message: text })
 }
 
-// 模板中调用的发送函数（不接收事件参数）
+// 模板中调用的发送函数，传入真实用户名
 const handleSend = () => {
-  sendMessage(sendChatMessage)
+  const currentUsername = userStore.user?.username || '匿名用户'
+  sendMessage(currentUsername, sendChatMessage)
 }
 
 // 接收聊天消息
@@ -107,7 +113,7 @@ const handleChatMessage = (data: unknown) => {
   addMessage(username, message)
 }
 
-// 接收绘图消息（待实现远程绘制）
+// 接收绘图消息
 const handleDrawMessage = (data: unknown) => {
   const drawData = data as DrawAction
   if (drawData.userId !== userId) {
@@ -139,6 +145,7 @@ onUnmounted(() => {
 </script>
 
 <style scoped>
+/* 样式保持不变，省略 */
 .board {
   display: flex;
   flex-direction: column;

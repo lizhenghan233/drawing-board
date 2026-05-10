@@ -14,7 +14,15 @@ export const useUserStore = defineStore('user', () => {
       const loggedUser = await apiLogin(username, password)
       user.value = loggedUser
       token.value = loggedUser.token
+      // 存储到 localStorage
       localStorage.setItem('token', loggedUser.token)
+      localStorage.setItem(
+        'user',
+        JSON.stringify({
+          id: loggedUser.id,
+          username: loggedUser.username,
+        }),
+      )
       showToast('登录成功', 'success')
       return true
     } catch (error) {
@@ -28,12 +36,18 @@ export const useUserStore = defineStore('user', () => {
     user.value = null
     token.value = ''
     localStorage.removeItem('token')
+    localStorage.removeItem('user')
   }
 
-  const restoreToken = () => {
-    const t = localStorage.getItem('token')
-    if (t) token.value = t
+  // 页面刷新时恢复用户信息
+  const restoreUser = () => {
+    const storedToken = localStorage.getItem('token')
+    const storedUser = localStorage.getItem('user')
+    if (storedToken && storedUser) {
+      token.value = storedToken
+      user.value = JSON.parse(storedUser)
+    }
   }
 
-  return { user, token, login, logout, restoreToken }
+  return { user, token, login, logout, restoreUser }
 })

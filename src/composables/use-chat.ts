@@ -26,10 +26,11 @@ export function useChat() {
     scrollToBottom()
   }
 
-  const sendMessage = (sendCallback?: (text: string) => void) => {
+  // sendMessage 接收当前用户名和可选的发送回调
+  const sendMessage = (currentUsername: string, sendCallback?: (text: string) => void) => {
     const text = newMessage.value.trim()
     if (!text) return
-    addMessage('我', text)
+    addMessage(currentUsername, text)
     if (sendCallback) sendCallback(text)
     newMessage.value = ''
   }

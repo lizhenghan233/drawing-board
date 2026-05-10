@@ -34,13 +34,13 @@ export interface TextData {
 }
 
 // 统一的绘图操作对象（历史记录 & WebSocket 传输都使用它）
+// src/types/drawing.ts
 export interface DrawAction {
-  id: string
-  userId: number
-  tool: ToolType
+  tool: 'pen' | 'rect' | 'circle' | 'text'
   color: string
   lineWidth: number
-  data: PenData | RectData | CircleData | TextData
+  points?: number[][]
+  userId?: number // 改为可选
 }
 
 // 兼容旧接口（如果你在别处使用了 DrawingData，它会变成 Deprecated，我们不再用它）
