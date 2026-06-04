@@ -1,16 +1,29 @@
 <template>
   <div class="login-container">
-    <h2>多人绘图白板 - 登录</h2>
-    <input v-model="username" placeholder="用户名" :disabled="loading" />
-    <input v-model="password" type="password" placeholder="密码" :disabled="loading" />
-    <button @click="handleLogin" :disabled="loading">
-      {{ loading ? '登录中...' : '登录' }}
-    </button>
+    <!-- 轮播背景层 -->
+    <div class="carousel">
+      <div
+        v-for="(img, index) in backgrounds"
+        :key="index"
+        class="carousel-slide"
+        :class="{ active: currentIndex === index }"
+        :style="{ backgroundImage: `url(${img})` }"
+      ></div>
+    </div>
+    <div class="overlay"></div>
+    <div class="login-card">
+      <h2>🎨 多人绘图白板</h2>
+      <input v-model="username" placeholder="用户名" :disabled="loading" />
+      <input v-model="password" type="password" placeholder="密码" :disabled="loading" />
+      <button @click="handleLogin" :disabled="loading">
+        {{ loading ? '登录中...' : '登录' }}
+      </button>
+    </div>
   </div>
 </template>
 
 <script setup lang="ts">
-import { ref } from 'vue'
+import { ref, onMounted, onUnmounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { useUserStore } from '@/stores/userStore'
 
@@ -19,6 +32,32 @@ const password = ref('')
 const loading = ref(false)
 const router = useRouter()
 const userStore = useUserStore()
+
+// 背景图片列表（Unsplash 协作/创意类图片）
+const backgrounds = [
+  'https://images.unsplash.com/photo-1581291518633-83b4ebd1d83e?q=80&w=2070&auto=format&fit=crop',
+  'https://images.unsplash.com/photo-1557804506-669a67965ba0?q=80&w=1974&auto=format&fit=crop',
+  'https://images.unsplash.com/photo-1522071820081-009f0129c71c?q=80&w=2070&auto=format&fit=crop',
+  'https://images.unsplash.com/photo-1522202176988-66273c2fd55f?q=80&w=2071&auto=format&fit=crop',
+]
+
+const currentIndex = ref(0)
+let intervalId: number | null = null
+
+// 轮播切换
+const startCarousel = () => {
+  intervalId = window.setInterval(() => {
+    currentIndex.value = (currentIndex.value + 1) % backgrounds.length
+  }, 5000) // 每5秒切换一次
+}
+
+// 清除定时器
+const stopCarousel = () => {
+  if (intervalId) {
+    clearInterval(intervalId)
+    intervalId = null
+  }
+}
 
 async function handleLogin() {
   if (!username.value.trim() || !password.value.trim()) {
@@ -33,20 +72,122 @@ async function handleLogin() {
     router.push('/rooms')
   }
 }
+
+onMounted(() => {
+  startCarousel()
+})
+
+onUnmounted(() => {
+  stopCarousel()
+})
 </script>
 
 <style scoped>
 .login-container {
-  width: 300px;
-  margin: 100px auto;
-  text-align: center;
+  position: relative;
+  min-height: 100vh;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  overflow: hidden;
 }
+
+/* 轮播容器 */
+.carousel {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  z-index: 0;
+}
+
+.carousel-slide {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background-size: cover;
+  background-position: center;
+  opacity: 0;
+  transition: opacity 1.2s ease-in-out;
+}
+
+.carousel-slide.active {
+  opacity: 1;
+}
+
+/* 半透明遮罩层 */
+.overlay {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background-color: rgba(0, 0, 0, 0.5);
+  z-index: 1;
+}
+
+/* 登录卡片 */
+.login-card {
+  position: relative;
+  z-index: 2;
+  background: rgba(255, 255, 255, 0.95);
+  backdrop-filter: blur(2px);
+  padding: 40px 32px;
+  border-radius: 24px;
+  box-shadow: 0 20px 35px rgba(0, 0, 0, 0.2);
+  width: 360px;
+  text-align: center;
+  transition: transform 0.2s;
+}
+
+.login-card:hover {
+  transform: translateY(-5px);
+}
+
+.login-card h2 {
+  margin-bottom: 28px;
+  color: #2c3e50;
+  font-weight: 600;
+}
+
 input,
 button {
   display: block;
   width: 100%;
-  margin: 10px 0;
-  padding: 8px;
+  margin: 12px 0;
+  padding: 12px;
   box-sizing: border-box;
+  border-radius: 40px;
+  border: 1px solid #ddd;
+  font-size: 16px;
+  transition: all 0.2s;
+}
+
+input:focus {
+  outline: none;
+  border-color: #667eea;
+  box-shadow: 0 0 0 2px rgba(102, 126, 234, 0.2);
+}
+
+button {
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  color: white;
+  border: none;
+  cursor: pointer;
+  font-weight: bold;
+  margin-top: 20px;
+}
+
+button:hover:not(:disabled) {
+  opacity: 0.9;
+  transform: scale(1.02);
+}
+
+button:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
 }
 </style>
