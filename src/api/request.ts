@@ -1,33 +1,18 @@
-// src/api/request.ts
-const API_BASE = import.meta.env.VITE_API_BASE_URL || 'http://localhost:3001'
+const API_BASE = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8081'
 
-interface RequestOptions extends RequestInit {
-  showError?: boolean
-}
-
-export async function request<T = unknown>(url: string, options: RequestOptions = {}): Promise<T> {
-  const { showError = true, ...fetchOptions } = options
-  try {
-    const response = await fetch(`${API_BASE}${url}`, fetchOptions)
-    if (!response.ok) {
-      throw new Error(`HTTP ${response.status}: ${response.statusText}`)
-    }
-    const data = await response.json()
-    return data as T
-  } catch (error) {
-    if (showError) {
-      const { showToast } = await import('@/composables/use-toast')
-      showToast(error instanceof Error ? error.message : '网络请求失败', 'error')
-    }
-    throw error
+async function request<T>(url: string, options: RequestInit): Promise<T> {
+  const response = await fetch(`${API_BASE}${url}`, options)
+  if (!response.ok) {
+    throw new Error(`HTTP ${response.status}`)
   }
+  return response.json()
 }
 
-export function get<T = unknown>(url: string, options?: RequestOptions) {
+export async function get<T>(url: string, options?: RequestInit): Promise<T> {
   return request<T>(url, { ...options, method: 'GET' })
 }
 
-export function post<T = unknown>(url: string, data?: unknown, options?: RequestOptions) {
+export async function post<T>(url: string, data?: unknown, options?: RequestInit): Promise<T> {
   return request<T>(url, {
     ...options,
     method: 'POST',

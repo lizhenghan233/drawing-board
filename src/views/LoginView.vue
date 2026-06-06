@@ -1,6 +1,5 @@
 <template>
   <div class="login-container">
-    <!-- 轮播背景层 -->
     <div class="carousel">
       <div
         v-for="(img, index) in backgrounds"
@@ -18,6 +17,9 @@
       <button @click="handleLogin" :disabled="loading">
         {{ loading ? '登录中...' : '登录' }}
       </button>
+      <div class="register-link">
+        还没有账号？ <router-link to="/register">立即注册</router-link>
+      </div>
     </div>
   </div>
 </template>
@@ -33,7 +35,7 @@ const loading = ref(false)
 const router = useRouter()
 const userStore = useUserStore()
 
-// 背景图片列表（Unsplash 协作/创意类图片）
+// 轮播背景图片列表
 const backgrounds = [
   'https://images.unsplash.com/photo-1581291518633-83b4ebd1d83e?q=80&w=2070&auto=format&fit=crop',
   'https://images.unsplash.com/photo-1557804506-669a67965ba0?q=80&w=1974&auto=format&fit=crop',
@@ -44,19 +46,14 @@ const backgrounds = [
 const currentIndex = ref(0)
 let intervalId: number | null = null
 
-// 轮播切换
 const startCarousel = () => {
   intervalId = window.setInterval(() => {
     currentIndex.value = (currentIndex.value + 1) % backgrounds.length
-  }, 5000) // 每5秒切换一次
+  }, 5000)
 }
 
-// 清除定时器
 const stopCarousel = () => {
-  if (intervalId) {
-    clearInterval(intervalId)
-    intervalId = null
-  }
+  if (intervalId) clearInterval(intervalId)
 }
 
 async function handleLogin() {
@@ -76,13 +73,13 @@ async function handleLogin() {
 onMounted(() => {
   startCarousel()
 })
-
 onUnmounted(() => {
   stopCarousel()
 })
 </script>
 
 <style scoped>
+/* 样式保持不变，仅增加注册链接样式 */
 .login-container {
   position: relative;
   min-height: 100vh;
@@ -91,8 +88,6 @@ onUnmounted(() => {
   align-items: center;
   overflow: hidden;
 }
-
-/* 轮播容器 */
 .carousel {
   position: absolute;
   top: 0;
@@ -101,7 +96,6 @@ onUnmounted(() => {
   height: 100%;
   z-index: 0;
 }
-
 .carousel-slide {
   position: absolute;
   top: 0;
@@ -113,12 +107,9 @@ onUnmounted(() => {
   opacity: 0;
   transition: opacity 1.2s ease-in-out;
 }
-
 .carousel-slide.active {
   opacity: 1;
 }
-
-/* 半透明遮罩层 */
 .overlay {
   position: absolute;
   top: 0;
@@ -128,8 +119,6 @@ onUnmounted(() => {
   background-color: rgba(0, 0, 0, 0.5);
   z-index: 1;
 }
-
-/* 登录卡片 */
 .login-card {
   position: relative;
   z-index: 2;
@@ -142,17 +131,14 @@ onUnmounted(() => {
   text-align: center;
   transition: transform 0.2s;
 }
-
 .login-card:hover {
   transform: translateY(-5px);
 }
-
 .login-card h2 {
   margin-bottom: 28px;
   color: #2c3e50;
   font-weight: 600;
 }
-
 input,
 button {
   display: block;
@@ -165,13 +151,11 @@ button {
   font-size: 16px;
   transition: all 0.2s;
 }
-
 input:focus {
   outline: none;
   border-color: #667eea;
   box-shadow: 0 0 0 2px rgba(102, 126, 234, 0.2);
 }
-
 button {
   background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
   color: white;
@@ -180,14 +164,25 @@ button {
   font-weight: bold;
   margin-top: 20px;
 }
-
 button:hover:not(:disabled) {
   opacity: 0.9;
   transform: scale(1.02);
 }
-
 button:disabled {
   opacity: 0.6;
   cursor: not-allowed;
+}
+.register-link {
+  margin-top: 20px;
+  font-size: 14px;
+  color: #555;
+}
+.register-link a {
+  color: #667eea;
+  text-decoration: none;
+  font-weight: bold;
+}
+.register-link a:hover {
+  text-decoration: underline;
 }
 </style>

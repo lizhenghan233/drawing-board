@@ -1,7 +1,7 @@
 // src/stores/userStore.ts
 import { defineStore } from 'pinia'
 import { ref } from 'vue'
-import { login as apiLogin } from '@/api/user'
+import { login as apiLogin, logout as apiLogout } from '@/api/user'
 import { showToast } from '@/composables/use-toast'
 import type { User } from '@/types'
 
@@ -14,14 +14,10 @@ export const useUserStore = defineStore('user', () => {
       const loggedUser = await apiLogin(username, password)
       user.value = loggedUser
       token.value = loggedUser.token
-      // 存储到 localStorage
       localStorage.setItem('token', loggedUser.token)
       localStorage.setItem(
         'user',
-        JSON.stringify({
-          id: loggedUser.id,
-          username: loggedUser.username,
-        }),
+        JSON.stringify({ id: loggedUser.id, username: loggedUser.username }),
       )
       showToast('登录成功', 'success')
       return true
@@ -32,14 +28,23 @@ export const useUserStore = defineStore('user', () => {
     }
   }
 
-  const logout = () => {
-    user.value = null
-    token.value = ''
-    localStorage.removeItem('token')
-    localStorage.removeItem('user')
+  // 修改 logout 为异步，调用后端接口
+  const logout = async () => {
+    try {
+      if (token.value) {
+        await apiLogout(token.value)
+      }
+    } catch (error) {
+      console.error('登出请求失败', error)
+    } finally {
+      user.value = null
+      token.value = ''
+      localStorage.removeItem('token')
+      localStorage.removeItem('user')
+      showToast('已退出登录', 'info')
+    }
   }
 
-  // 页面刷新时恢复用户信息
   const restoreUser = () => {
     const storedToken = localStorage.getItem('token')
     const storedUser = localStorage.getItem('user')

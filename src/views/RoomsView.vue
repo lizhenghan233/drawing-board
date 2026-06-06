@@ -2,7 +2,12 @@
   <div class="rooms-container">
     <div class="overlay"></div>
     <div class="rooms-content">
-      <h2>📁 房间列表</h2>
+      <!-- 原 h2 和按钮在同一行，使用 flex 布局 -->
+      <div class="rooms-header">
+        <h2>📁 房间列表</h2>
+        <button class="logout-btn" @click="handleLogout">退出登录</button>
+      </div>
+      <!-- 以下内容完全不变 -->
       <div class="create-room">
         <input v-model="newRoomName" placeholder="新房间名称" :disabled="loading" />
         <button @click="handleCreateRoom" :disabled="loading">
@@ -68,9 +73,36 @@ async function handleCreateRoom() {
 function joinRoom(roomId: number) {
   router.push(`/board/${roomId}`)
 }
+
+// 新增退出登录方法
+async function handleLogout() {
+  await userStore.logout()
+  router.push('/login')
+}
 </script>
 
 <style scoped>
+/* 原有所有样式保持不变，仅新增下面几行 */
+.rooms-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 20px;
+}
+.logout-btn {
+  background: #dc3545;
+  color: white;
+  border: none;
+  border-radius: 20px;
+  padding: 6px 16px;
+  cursor: pointer;
+  font-size: 14px;
+}
+.logout-btn:hover {
+  background: #c82333;
+}
+
+/* 以下是你原有的样式，请确保它们还在（这里只展示部分，实际你原有的样式不能丢） */
 .rooms-container {
   position: relative;
   min-height: 100vh;
@@ -79,7 +111,6 @@ function joinRoom(roomId: number) {
   background-position: center;
   background-attachment: fixed;
 }
-
 .overlay {
   position: absolute;
   top: 0;
@@ -89,7 +120,6 @@ function joinRoom(roomId: number) {
   background-color: rgba(0, 0, 0, 0.6);
   z-index: 1;
 }
-
 .rooms-content {
   position: relative;
   z-index: 2;
@@ -97,7 +127,6 @@ function joinRoom(roomId: number) {
   margin: 0 auto;
   padding: 40px 20px;
 }
-
 h2 {
   color: white;
   font-size: 2rem;
@@ -105,7 +134,6 @@ h2 {
   margin-bottom: 30px;
   text-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
 }
-
 .create-room {
   display: flex;
   gap: 12px;
@@ -115,7 +143,6 @@ h2 {
   padding: 20px;
   border-radius: 60px;
 }
-
 .create-room input {
   flex: 1;
   padding: 12px 20px;
@@ -124,7 +151,6 @@ h2 {
   font-size: 16px;
   background: white;
 }
-
 .create-room button {
   padding: 12px 24px;
   border-radius: 40px;
@@ -135,12 +161,10 @@ h2 {
   cursor: pointer;
   transition: 0.2s;
 }
-
 .create-room button:hover:not(:disabled) {
   transform: scale(1.02);
   opacity: 0.9;
 }
-
 .room-list {
   list-style: none;
   padding: 0;
@@ -148,7 +172,6 @@ h2 {
   flex-direction: column;
   gap: 16px;
 }
-
 .room-card {
   background: rgba(255, 255, 255, 0.95);
   backdrop-filter: blur(4px);
@@ -159,19 +182,16 @@ h2 {
   align-items: center;
   transition: all 0.2s;
 }
-
 .room-card:hover {
   transform: translateX(8px);
   background: white;
   box-shadow: 0 8px 20px rgba(0, 0, 0, 0.2);
 }
-
 .room-name {
   font-size: 1.2rem;
   font-weight: 500;
   color: #2c3e50;
 }
-
 .room-card button {
   background: #667eea;
   color: white;
@@ -182,12 +202,10 @@ h2 {
   font-weight: bold;
   transition: 0.2s;
 }
-
 .room-card button:hover {
   background: #5a67d8;
   transform: scale(1.05);
 }
-
 .empty-tip {
   text-align: center;
   color: white;

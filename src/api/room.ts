@@ -1,6 +1,6 @@
 // src/api/room.ts
 import { get, post } from './request'
-import type { Room } from '@/types'
+import type { Room } from '@/types/room'
 
 export async function getRooms(): Promise<Room[]> {
   const rooms = await get<Room[]>('/rooms')

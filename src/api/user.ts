@@ -1,12 +1,30 @@
 // src/api/user.ts
-import { get } from './request'
-import type { JsonUser, User } from '@/types'
+import { post } from './request'
+import type { User } from '@/types'
 
 export async function login(username: string, password: string): Promise<User> {
-  const users = await get<JsonUser[]>('/users')
-  const found = users.find((u) => u.username === username && u.password === password)
-  if (!found) {
-    throw new Error('用户名或密码错误')
-  }
-  return { id: found.id, username: found.username, token: found.token }
+  const data = await post<{ id: number; username: string; token: string }>('/api/auth/login', {
+    username,
+    password,
+  })
+  if (!data) throw new Error('登录失败')
+  return { id: String(data.id), username: data.username, token: data.token }
+}
+export async function register(username: string, password: string): Promise<User> {
+  const data = await post<{ id: string; username: string; token: string }>('/api/auth/register', {
+    username,
+    password,
+  })
+  if (!data) throw new Error('注册失败')
+  return data
+}
+
+export async function logout(token: string): Promise<void> {
+  await post<void>(
+    '/api/auth/logout',
+    {},
+    {
+      headers: { Authorization: `Bearer ${token}` },
+    },
+  )
 }

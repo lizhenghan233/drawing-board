@@ -1,5 +1,5 @@
 <template>
-  <div class="canvas-wrapper" style="position: relative; touch-action: none;">
+  <div class="canvas-wrapper" style="position: relative; touch-action: none">
     <canvas
       ref="canvasEl"
       class="canvas"
@@ -28,13 +28,11 @@
 <script setup lang="ts">
 import { ref, onMounted, onUnmounted, nextTick } from 'vue'
 import { useDrawingEngine } from '@/composables/useDrawingEngine'
-import { useWebSocket } from '@/composables/use-websocket'
 import type { DrawAction, ToolType, Point } from '@/types'
 
-// Props
 const props = defineProps<{
   userId: number
-  roomId?: string   // 备用
+  roomId?: string
 }>()
 
 const emit = defineEmits<{
@@ -42,10 +40,7 @@ const emit = defineEmits<{
   (e: 'clear'): void
 }>()
 
-// 引擎
 const engine = useDrawingEngine(props.userId)
-
-// Canvas DOM
 const canvasEl = ref<HTMLCanvasElement | null>(null)
 
 // 文本输入相关
@@ -79,45 +74,44 @@ function commitText() {
   textValue.value = ''
 }
 
-// 注册文本输入回调
 engine.registerTextInput(openTextInput)
 
-// ---------- WebSocket 消息同步 ----------
-const { send, on, off } = useWebSocket()
-
-// 监听远程绘图消息（本地绘制不在此处理，避免重复）
-const remoteHandler = (data: unknown) => {
-  const action = data as DrawAction
-  if (action.userId !== props.userId) {
-    engine.drawRemote(action)
-  }
+// 转换点格式：Point[] -> number[][]
+function convertToNumberArray(points?: Point[]): number[][] | undefined {
+  if (!points) return undefined
+  return points.map((p) => [p.x, p.y])
 }
 
-// 监听远程清屏（可选）
-const clearHandler = (_data: unknown) => {
-  // 简单起见，不自动清屏，可根据需求扩展
+// 确保发送的 DrawAction 中 points 为 number[][]
+function normalizeAction(action: DrawAction): DrawAction {
+  if (!action.points) return action
+  const firstPoint = action.points[0]
+  // 如果第一个点具有 x 属性，说明是 Point[] 格式，需要转换
+  if (
+    Array.isArray(action.points) &&
+    firstPoint &&
+    typeof firstPoint === 'object' &&
+    'x' in firstPoint
+  ) {
+    return {
+      ...action,
+      points: convertToNumberArray(action.points as unknown as Point[]),
+    }
+  }
+  return action
 }
 
 onMounted(() => {
-  // 初始化 Canvas（尺寸由 resize 决定）
   const canvas = canvasEl.value!
   engine.initCanvas(canvas)
-  // 初次调节尺寸
   handleResize()
   window.addEventListener('resize', handleResize)
-
-  // 注册 WebSocket 事件（注意：BoardView 已经 connect，这里只监听）
-  on('draw', remoteHandler)
-  on('clear', clearHandler)
 })
 
 onUnmounted(() => {
   window.removeEventListener('resize', handleResize)
-  off('draw', remoteHandler)
-  off('clear', clearHandler)
 })
 
-// ---------- 自适应尺寸（与 TempCanvas 行为一致）----------
 function handleResize() {
   const canvas = canvasEl.value
   if (!canvas) return
@@ -133,22 +127,32 @@ function handleResize() {
   }
 }
 
-// ---------- 事件分发（适配鼠标和触摸）----------
-function onMouseDown(e: MouseEvent) { engine.onPointerDown(e) }
-function onMouseMove(e: MouseEvent) { engine.onPointerMove(e) }
+function onMouseDown(e: MouseEvent) {
+  engine.onPointerDown(e)
+}
+function onMouseMove(e: MouseEvent) {
+  engine.onPointerMove(e)
+}
 function onMouseUp(e: MouseEvent) {
   const action = engine.onPointerUp(e)
-  if (action) emit('draw', action)
+  if (action) {
+    emit('draw', normalizeAction(action))
+  }
 }
 
-function onTouchStart(e: TouchEvent) { engine.onPointerDown(e) }
-function onTouchMove(e: TouchEvent) { engine.onPointerMove(e) }
+function onTouchStart(e: TouchEvent) {
+  engine.onPointerDown(e)
+}
+function onTouchMove(e: TouchEvent) {
+  engine.onPointerMove(e)
+}
 function onTouchEnd(e: TouchEvent) {
   const action = engine.onPointerUp(e)
-  if (action) emit('draw', action)
+  if (action) {
+    emit('draw', normalizeAction(action))
+  }
 }
 
-// ---------- 向外部暴露的控制接口 ----------
 defineExpose({
   setColor: engine.setColor,
   setLineWidth: engine.setLineWidth,
@@ -156,8 +160,6 @@ defineExpose({
   clearCanvas: () => {
     engine.clearCanvas()
     emit('clear')
-    // 通知远端清屏（可选）
-    send('clear', { userId: props.userId })
   },
   undo: engine.undo,
   redo: engine.redo,

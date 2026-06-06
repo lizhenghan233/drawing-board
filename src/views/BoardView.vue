@@ -14,9 +14,10 @@
       <button @click="setTool('rect')">矩形</button>
       <button @click="setTool('circle')">圆形</button>
       <button @click="setTool('text')">文本</button>
+      <!-- 新增退出按钮 -->
+      <button @click="handleLogout" class="logout-btn">退出登录</button>
     </div>
 
-    <!-- 主体区域 -->
     <div class="main-area">
       <div class="canvas-container">
         <DrawingCanvas ref="canvasRef" :userId="userId" @draw="onLocalDraw" />
@@ -52,25 +53,20 @@
 
 <script setup lang="ts">
 import { ref, onMounted, onUnmounted } from 'vue'
-import { useRoute } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router' // 添加 useRouter
 import { useUserStore } from '@/stores/userStore'
 import DrawingCanvas from '@/components/DrawingCanvas.vue'
 import { useWebSocket } from '@/composables/use-websocket'
 import { useChat } from '@/composables/use-chat'
-import type { DrawingData } from '@/types'
-
-// 假设 DrawAction 类型已在全局定义，若无则定义
-interface DrawAction extends DrawingData {
-  userId?: number
-}
+import type { DrawAction } from '@/types'
 
 const route = useRoute()
+const router = useRouter() // 新增
 const userStore = useUserStore()
 const roomId = route.params.roomId as string
 const userId = userStore.user?.id ? Number(userStore.user.id) : 0
 const token = userStore.token
 
-// 画板引用与工具栏
 const canvasRef = ref<InstanceType<typeof DrawingCanvas> | null>(null)
 const color = ref('#000000')
 const lineWidth = ref(2)
@@ -80,40 +76,33 @@ const handleWidthChange = () => canvasRef.value?.setLineWidth(lineWidth.value)
 const handleClear = () => canvasRef.value?.clearCanvas()
 const handleUndo = () => canvasRef.value?.undo()
 const handleRedo = () => canvasRef.value?.redo()
-
 const setTool = (tool: 'pen' | 'rect' | 'circle' | 'text') => {
   canvasRef.value?.setTool(tool)
 }
 
-// 本地绘图广播
-const onLocalDraw = (drawData: DrawingData) => {
+const onLocalDraw = (drawData: DrawAction) => {
   ws.send('draw', drawData)
 }
 
-// WebSocket
 const ws = useWebSocket()
-
-// 聊天
 const { messages, newMessage, chatContainer, addMessage, sendMessage } = useChat()
 
-// 通过 WebSocket 发送聊天消息
 const sendChatMessage = (text: string) => {
-  ws.send('chat', { message: text })
+  const username = userStore.user?.username || '匿名用户'
+  ws.sendText(`CHAT:${username}:${text}`)
 }
 
-// 模板中调用的发送函数，传入真实用户名
 const handleSend = () => {
   const currentUsername = userStore.user?.username || '匿名用户'
   sendMessage(currentUsername, sendChatMessage)
 }
 
-// 接收聊天消息
 const handleChatMessage = (data: unknown) => {
   const { username, message } = data as { username: string; message: string }
+  if (username === userStore.user?.username) return
   addMessage(username, message)
 }
 
-// 接收绘图消息
 const handleDrawMessage = (data: unknown) => {
   const drawData = data as DrawAction
   if (drawData.userId !== userId) {
@@ -121,17 +110,37 @@ const handleDrawMessage = (data: unknown) => {
   }
 }
 
-// 在线成员（示例）
-const members = ref([
-  { id: 1, name: 'Alice' },
-  { id: 2, name: 'Bob' },
-])
+// 在线成员（动态）
+const members = ref<{ id: number; name: string }[]>([])
+
+const handleMembersUpdate = (data: unknown) => {
+  const { members: memberList } = data as { members: { id: number; name: string }[] }
+  members.value = memberList.map((m) => ({ id: m.id, name: m.name }))
+}
+// 新增退出登录方法
+const handleLogout = async () => {
+  ws.disconnect() // 主动关闭 WebSocket
+  await userStore.logout()
+  router.push('/login')
+}
 
 onMounted(() => {
   if (userId && token) {
-    ws.connect(roomId, userId, token)
+    const username = userStore.user?.username || '匿名用户'
+    console.log(
+      '准备连接 WebSocket, roomId:',
+      roomId,
+      'userId:',
+      userId,
+      'token:',
+      token,
+      'username:',
+      username,
+    )
+    ws.connect(roomId, userId, token, username)
     ws.on('chat', handleChatMessage)
     ws.on('draw', handleDrawMessage)
+    ws.on('members', handleMembersUpdate)
   } else {
     console.warn('用户未登录，无法连接 WebSocket')
   }
@@ -140,12 +149,27 @@ onMounted(() => {
 onUnmounted(() => {
   ws.off('chat', handleChatMessage)
   ws.off('draw', handleDrawMessage)
+  ws.off('members', handleMembersUpdate)
   ws.disconnect()
 })
 </script>
 
 <style scoped>
-/* 样式保持不变，省略 */
+/* 原有所有样式保持不变，仅新增下面几行 */
+.logout-btn {
+  background: #dc3545;
+  color: white;
+  border: none;
+  border-radius: 20px;
+  padding: 6px 16px;
+  cursor: pointer;
+  margin-left: auto;
+}
+.logout-btn:hover {
+  background: #c82333;
+}
+
+/* 以下是你原有的样式（请确保它们还在，这里仅示意） */
 .board {
   display: flex;
   flex-direction: column;
