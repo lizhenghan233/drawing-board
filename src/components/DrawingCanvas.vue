@@ -1,5 +1,10 @@
 <template>
-  <div class="canvas-wrapper" style="position: relative; touch-action: none">
+  <div
+    class="canvas-wrapper"
+    style="touch-action: none"
+    @wheel.prevent="engine.onWheel"
+    @contextmenu.prevent
+  >
     <canvas
       ref="canvasEl"
       class="canvas"
@@ -12,7 +17,7 @@
       @touchend.prevent="onTouchEnd"
     ></canvas>
 
-    <!-- 文本输入框 -->
+    <!-- 文本输入框（新建或再编辑） -->
     <input
       v-if="textInputVisible"
       ref="textInputRef"
@@ -28,7 +33,7 @@
 <script setup lang="ts">
 import { ref, onMounted, onUnmounted, nextTick } from 'vue'
 import { useDrawingEngine } from '@/composables/useDrawingEngine'
-import type { DrawAction, ToolType, Point } from '@/types'
+import type { DrawAction, ToolType, Point, TextData } from '@/types'
 
 const props = defineProps<{
   userId: number
@@ -43,7 +48,7 @@ const emit = defineEmits<{
 const engine = useDrawingEngine(props.userId)
 const canvasEl = ref<HTMLCanvasElement | null>(null)
 
-// 文本输入相关
+// ---------- 文本输入状态 ----------
 const textInputVisible = ref(false)
 const textValue = ref('')
 const textInputStyle = ref({})
@@ -58,101 +63,105 @@ function openTextInput(point: Point) {
     top: point.y + 'px',
   }
   textInputVisible.value = true
-  nextTick(() => {
-    textInputRef.value?.focus()
-  })
+  nextTick(() => textInputRef.value?.focus())
 }
 
 function commitText() {
-  if (!textValue.value.trim()) {
+  const trimmed = textValue.value.trim()
+  if (!trimmed) {
     textInputVisible.value = false
     return
   }
-  const action = engine.addTextAction(textValue.value.trim(), textPoint!)
-  emit('draw', action)
+  if (textPoint) {
+    const action = engine.addTextAction(trimmed, textPoint)
+    emit('draw', action)
+  }
   textInputVisible.value = false
-  textValue.value = ''
 }
+
 
 engine.registerTextInput(openTextInput)
 
-// 转换点格式：Point[] -> number[][]
-function convertToNumberArray(points?: Point[]): number[][] | undefined {
-  if (!points) return undefined
-  return points.map((p) => [p.x, p.y])
-}
+// ---------- 快捷键 ----------
+function onKeyDown(e: KeyboardEvent) {
+  // 如果焦点在输入框内，不处理快捷键（留给文本编辑）
+  if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return
 
-// 确保发送的 DrawAction 中 points 为 number[][]
-function normalizeAction(action: DrawAction): DrawAction {
-  if (!action.points) return action
-  const firstPoint = action.points[0]
-  // 如果第一个点具有 x 属性，说明是 Point[] 格式，需要转换
-  if (
-    Array.isArray(action.points) &&
-    firstPoint &&
-    typeof firstPoint === 'object' &&
-    'x' in firstPoint
-  ) {
-    return {
-      ...action,
-      points: convertToNumberArray(action.points as unknown as Point[]),
-    }
+  const key = e.key.toLowerCase()
+  if (key === 'p') engine.setTool('pen')
+  else if (key === 'r') engine.setTool('rect')
+  else if (key === 'c') engine.setTool('circle')
+  else if (key === 't') engine.setTool('text')
+  else if (key === 'e') engine.setTool('eraser')
+  else if (key === 'z' && (e.ctrlKey || e.metaKey)) {
+    e.preventDefault()
+    if (e.shiftKey) engine.redo()
+    else engine.undo()
   }
-  return action
+  else if (key === 'y' && (e.ctrlKey || e.metaKey)) {
+    e.preventDefault()
+    engine.redo()
+  }
+  else if (key === '1') { engine.view.value.scale = Math.min(10, engine.view.value.scale * 1.1); engine.requestRedraw() }
+  else if (key === '2') { engine.view.value.scale = Math.max(0.1, engine.view.value.scale * 0.9); engine.requestRedraw() }
 }
 
-onMounted(() => {
-  const canvas = canvasEl.value!
-  engine.initCanvas(canvas)
-  handleResize()
-  window.addEventListener('resize', handleResize)
-})
-
-onUnmounted(() => {
-  window.removeEventListener('resize', handleResize)
-})
-
+// ---------- 尺寸自适应 ----------
 function handleResize() {
   const canvas = canvasEl.value
   if (!canvas) return
   const parent = canvas.parentElement
   if (!parent) return
   const rect = parent.getBoundingClientRect()
-  const oldWidth = canvas.width
-  const oldHeight = canvas.height
-  if (rect.width !== oldWidth || rect.height !== oldHeight) {
+  if (rect.width !== canvas.width || rect.height !== canvas.height) {
     canvas.width = rect.width
     canvas.height = rect.height
     engine.handleResize()
   }
 }
 
-function onMouseDown(e: MouseEvent) {
-  engine.onPointerDown(e)
-}
-function onMouseMove(e: MouseEvent) {
-  engine.onPointerMove(e)
-}
-function onMouseUp(e: MouseEvent) {
+// ---------- 事件分发 ----------
+function onMouseDown(e: MouseEvent)  { engine.onPointerDown(e) }
+function onMouseMove(e: MouseEvent)  { engine.onPointerMove(e) }
+function onMouseUp(e: MouseEvent)    {
   const action = engine.onPointerUp(e)
-  if (action) {
-    emit('draw', normalizeAction(action))
-  }
+  if (action) emit('draw', normalizeAction(action))
+}
+function onTouchStart(e: TouchEvent) { engine.onPointerDown(e) }
+function onTouchMove(e: TouchEvent)  { engine.onPointerMove(e) }
+function onTouchEnd(e: TouchEvent)   {
+  const action = engine.onPointerUp(e)
+  if (action) emit('draw', normalizeAction(action))
 }
 
-function onTouchStart(e: TouchEvent) {
-  engine.onPointerDown(e)
-}
-function onTouchMove(e: TouchEvent) {
-  engine.onPointerMove(e)
-}
-function onTouchEnd(e: TouchEvent) {
-  const action = engine.onPointerUp(e)
-  if (action) {
-    emit('draw', normalizeAction(action))
+// 确保发送的数据永远是 DrawAction 格式（兼容旧 points 格式）
+function normalizeAction(action: DrawAction): DrawAction {
+  // 如果 action 包含旧的 points: number[][] 则转为 { points: Point[] }
+  if ((action as any).points && !(action.data as any)?.points) {
+    const pts = (action as any).points as number[][]
+    return {
+      ...action,
+      data: { points: pts.map(([x, y]) => ({ x, y })) },
+    }
   }
+  return action
 }
 
+// ---------- 生命周期 ----------
+onMounted(() => {
+  const canvas = canvasEl.value!
+  engine.initCanvas(canvas)
+  handleResize()
+  window.addEventListener('resize', handleResize)
+  window.addEventListener('keydown', onKeyDown)
+})
+
+onUnmounted(() => {
+  window.removeEventListener('resize', handleResize)
+  window.removeEventListener('keydown', onKeyDown)
+})
+
+// ---------- 对外暴露 ----------
 defineExpose({
   setColor: engine.setColor,
   setLineWidth: engine.setLineWidth,
@@ -167,6 +176,7 @@ defineExpose({
   canRedo: engine.canRedo,
   loadSnapshot: engine.loadSnapshot,
   drawRemote: engine.drawRemote,
+  view: engine.view,
 })
 </script>
 
@@ -175,6 +185,7 @@ defineExpose({
   width: 100%;
   height: 100%;
   position: relative;
+  overflow: hidden;
 }
 .canvas {
   width: 100%;
@@ -191,5 +202,6 @@ defineExpose({
   outline: none;
   font-size: 16px;
   padding: 2px 5px;
+  z-index: 10;
 }
 </style>

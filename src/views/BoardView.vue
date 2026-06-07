@@ -10,12 +10,17 @@
       <button @click="handleUndo">撤销</button>
       <button @click="handleRedo">重做</button>
       <label>工具：</label>
-      <button @click="setTool('pen')">画笔</button>
-      <button @click="setTool('rect')">矩形</button>
-      <button @click="setTool('circle')">圆形</button>
-      <button @click="setTool('text')">文本</button>
+      <button @click="setTool('pen')">画笔/P</button>
+      <button @click="setTool('rect')">矩形/R</button>
+      <button @click="setTool('circle')">圆形/C</button>
+      <button @click="setTool('text')">文本/T</button>
+      <button @click="setTool('eraser')">橡皮擦/E</button>
       <!-- 新增退出按钮 -->
       <button @click="handleLogout" class="logout-btn">退出登录</button>
+      <!-- 缩放级别显示 -->
+      <span style="margin-left:10px; color:#666;">
+        缩放: {{ Math.round((canvasRef?.view?.scale ?? 1) * 100) }}%
+      </span>
     </div>
 
     <div class="main-area">

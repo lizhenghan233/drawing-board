@@ -1,17 +1,30 @@
 // src/composables/useDrawingEngine.ts
 import { ref, shallowRef } from 'vue'
-import type { DrawAction, ToolType, Point } from '@/types'
+import type { DrawAction, ToolType, Point, ViewTransform, TextData } from '@/types'
 
 let nextId = 0
 function generateId(): string {
   return `action_${Date.now()}_${nextId++}_${Math.random().toString(36).substr(2, 9)}`
 }
 
+// 辅助：将旧版 points: number[][] 转为 Point[]
+function normalizeOldPoints(points?: unknown): Point[] | null {
+  if (!Array.isArray(points) || points.length === 0) return null
+  const first = points[0]
+  if (typeof first === 'object' && first !== null && 'x' in first) {
+    return points as unknown as Point[]
+  }
+  if (Array.isArray(first)) {
+    return (points as number[][]).map(([x, y]) => ({ x, y }))
+  }
+  return null
+}
+
 export function useDrawingEngine(userId: number) {
   // ---------- Canvas 引用 ----------
   const mainCanvasRef = ref<HTMLCanvasElement | null>(null)
 
-  // 离屏 Canvas（内存中渲染全部指令，避免闪烁）
+  // 离屏 Canvas
   const offscreenCanvas = document.createElement('canvas')
   const offCtx = offscreenCanvas.getContext('2d')!
 
@@ -20,32 +33,66 @@ export function useDrawingEngine(userId: number) {
   const currentColor = ref('#000000')
   const currentLineWidth = ref(3)
 
-  // 所有绘制指令（自己和他人）
+  // 视图变换（缩放/平移）
+  const view = ref<ViewTransform>({ scale: 1, offsetX: 0, offsetY: 0 })
+
+  // 所有绘制指令
   const allActions = shallowRef<DrawAction[]>([])
 
-  // 撤销 / 重做栈（只存储本地的 action 对象）
+  // 撤销 / 重做栈
   const undoStack = ref<DrawAction[]>([])
   const redoStack = ref<DrawAction[]>([])
 
-  // 是否正在绘制
+  // 绘制状态
   let isDrawing = false
   let startPoint: Point | null = null
-  let currentPoints: Point[] = []  // 自由画笔的点序列
+  let currentPoints: Point[] = []
+  // 平移拖拽状态
+  let isPanning = false
+  let lastPanPoint: Point | null = null
 
   // 异步重绘控制
   let rafId: number | null = null
   let needRedraw = false
 
-  // 文本工具用（外部注入）
+  // 文本工具回调（外部注入）
   let showTextInput: ((point: Point) => void) | null = null
 
-  // 状态
   const canUndo = ref(false)
   const canRedo = ref(false)
 
   function updateUndoRedoState() {
     canUndo.value = undoStack.value.length > 0
     canRedo.value = redoStack.value.length > 0
+  }
+
+  // ---------- 坐标转换（屏幕 ↔ 画布）----------
+  function screenToCanvas(screenX: number, screenY: number): Point {
+    const { scale, offsetX, offsetY } = view.value
+    return {
+      x: (screenX - offsetX) / scale,
+      y: (screenY - offsetY) / scale,
+    }
+  }
+
+  function canvasToScreen(canvasX: number, canvasY: number): Point {
+    const { scale, offsetX, offsetY } = view.value
+    return {
+      x: canvasX * scale + offsetX,
+      y: canvasY * scale + offsetY,
+    }
+  }
+
+  // 从事件获取屏幕坐标（相对于 Canvas 元素）
+  function getCanvasPoint(e: MouseEvent | TouchEvent, canvas: HTMLCanvasElement): Point {
+    const rect = canvas.getBoundingClientRect()
+    const clientX = (e as TouchEvent).touches
+      ? (e as TouchEvent).touches[0].clientX
+      : (e as MouseEvent).clientX
+    const clientY = (e as TouchEvent).touches
+      ? (e as TouchEvent).touches[0].clientY
+      : (e as MouseEvent).clientY
+    return { x: clientX - rect.left, y: clientY - rect.top }
   }
 
   // ---------- Canvas 初始化 ----------
@@ -64,7 +111,7 @@ export function useDrawingEngine(userId: number) {
     offCtx.lineJoin = 'round'
   }
 
-  // 确保画布尺寸跟随窗口（暴露给外部调用）
+  // 窗口尺寸变化（只影响硬件像素，缩放状态不变）
   function handleResize() {
     const main = mainCanvasRef.value
     if (!main) return
@@ -79,13 +126,21 @@ export function useDrawingEngine(userId: number) {
     }
   }
 
-  // ---------- 离屏渲染全部指令 ----------
+  // ---------- 渲染全部指令到离屏（应用缩放与平移）----------
   function renderAllToOffscreen() {
     if (!offscreenCanvas.width || !offscreenCanvas.height) return
-    offCtx.clearRect(0, 0, offscreenCanvas.width, offscreenCanvas.height)
+    const ctx = offCtx
+    ctx.clearRect(0, 0, offscreenCanvas.width, offscreenCanvas.height)
+
+    ctx.save()
+    // 应用视图变换
+    ctx.translate(view.value.offsetX, view.value.offsetY)
+    ctx.scale(view.value.scale, view.value.scale)
+
     for (const action of allActions.value) {
-      drawActionOnContext(offCtx, action)
+      drawActionOnContext(ctx, action)
     }
+    ctx.restore()
   }
 
   function drawActionOnContext(ctx: CanvasRenderingContext2D, action: DrawAction) {
@@ -97,13 +152,19 @@ export function useDrawingEngine(userId: number) {
     ctx.lineJoin = 'round'
 
     switch (action.tool) {
-      case 'pen': {
-        const pts = (action.data as any).points as Point[]
+      case 'pen':
+      case 'eraser': {
+        const d = action.data as any
+        const pts = d.points as Point[] | undefined
         if (pts && pts.length > 1) {
           ctx.beginPath()
           ctx.moveTo(pts[0].x, pts[0].y)
-          for (let i = 1; i < pts.length; i++) {
-            ctx.lineTo(pts[i].x, pts[i].y)
+          for (let i = 1; i < pts.length; i++) ctx.lineTo(pts[i].x, pts[i].y)
+          if (action.tool === 'eraser') {
+            // 橡皮擦：用背景色绘制（全局组合为正常）
+            ctx.globalCompositeOperation = 'source-over'
+            ctx.strokeStyle = '#ffffff'
+            ctx.lineWidth = action.lineWidth * 2 // 稍粗一点，擦得更干净
           }
           ctx.stroke()
         }
@@ -122,7 +183,7 @@ export function useDrawingEngine(userId: number) {
         break
       }
       case 'text': {
-        const d = action.data as any
+        const d = action.data as TextData
         ctx.font = `${action.lineWidth * 5}px sans-serif`
         ctx.fillText(d.text, d.x, d.y)
         break
@@ -131,7 +192,7 @@ export function useDrawingEngine(userId: number) {
     ctx.restore()
   }
 
-  // 将离屏画布一次性绘制到主 Canvas
+  // 将离屏内容绘制到主 Canvas（只应用 CSS 缩放时的显示）
   function flushToMainCanvas() {
     const main = mainCanvasRef.value
     if (!main) return
@@ -141,6 +202,7 @@ export function useDrawingEngine(userId: number) {
   }
 
   function requestRedraw() {
+    console.trace('requestRedraw 被调用')
     needRedraw = true
     if (rafId) return
     rafId = requestAnimationFrame(() => {
@@ -151,19 +213,19 @@ export function useDrawingEngine(userId: number) {
     })
   }
 
-  // ---------- 历史栈操作 ----------
+  // ---------- 历史栈 ----------
   function pushAction(action: DrawAction, isLocal: boolean) {
     allActions.value = [...allActions.value, action]
     if (isLocal) {
       undoStack.value.push(action)
-      redoStack.value = []   // 新操作清空重做栈
+      redoStack.value = []
     }
     updateUndoRedoState()
     requestRedraw()
   }
 
   function removeActionById(id: string) {
-    allActions.value = allActions.value.filter(a => a.id !== id)
+    allActions.value = allActions.value.filter((a) => a.id !== id)
     requestRedraw()
   }
 
@@ -184,76 +246,92 @@ export function useDrawingEngine(userId: number) {
     requestRedraw()
   }
 
-  // ---------- 坐标转换 ----------
-  function getCanvasPoint(e: MouseEvent | TouchEvent, canvas: HTMLCanvasElement): Point {
-    const rect = canvas.getBoundingClientRect()
-    const clientX = (e as TouchEvent).touches
-      ? (e as TouchEvent).touches[0].clientX
-      : (e as MouseEvent).clientX
-    const clientY = (e as TouchEvent).touches
-      ? (e as TouchEvent).touches[0].clientY
-      : (e as MouseEvent).clientY
-    return {
-      x: (clientX - rect.left) * (canvas.width / rect.width),
-      y: (clientY - rect.top) * (canvas.height / rect.height),
-    }
-  }
 
-  // ---------- 鼠标 / 触摸事件 ----------
+  // ---------- 鼠标/触摸事件（适配缩放和平移）----------
   function onPointerDown(e: MouseEvent | TouchEvent) {
     e.preventDefault()
-    const canvas = mainCanvasRef.value
-    if (!canvas) return
-    const point = getCanvasPoint(e, canvas)
+    const canvas = mainCanvasRef.value!
+    const screenPoint = getCanvasPoint(e, canvas)
 
-    // 文本工具：弹输入框（不进入绘制状态）
-    if (currentTool.value === 'text') {
-      showTextInput?.(point)
+    // 右键或中键：开始平移
+    if ((e as MouseEvent).button === 1 || (e as MouseEvent).button === 2) {
+      isPanning = true
+      lastPanPoint = screenPoint
       return
     }
 
+      // 文本工具 → 弹出输入框
+    if (currentTool.value === 'text') {
+     showTextInput?.(screenToCanvas(screenPoint.x, screenPoint.y))
+     return
+    }
+
     isDrawing = true
-    startPoint = point
-    currentPoints = [point]
+    const canvasPoint = screenToCanvas(screenPoint.x, screenPoint.y)
+    startPoint = canvasPoint
+    currentPoints = [canvasPoint]
   }
 
   function onPointerMove(e: MouseEvent | TouchEvent) {
-    if (!isDrawing) return
     e.preventDefault()
     const canvas = mainCanvasRef.value!
-    const point = getCanvasPoint(e, canvas)
+    const screenPoint = getCanvasPoint(e, canvas)
+
+    // 处理平移
+    if (isPanning && lastPanPoint) {
+      const dx = screenPoint.x - lastPanPoint.x
+      const dy = screenPoint.y - lastPanPoint.y
+      view.value = {
+        ...view.value,
+        offsetX: view.value.offsetX + dx,
+        offsetY: view.value.offsetY + dy,
+      }
+      lastPanPoint = screenPoint
+      requestRedraw()
+      return
+    }
+
+    console.log('move event, isDrawing=', isDrawing)  // 临时日志
+    if (!isDrawing) return
+
+    const canvasPoint = screenToCanvas(screenPoint.x, screenPoint.y)
     const ctx = canvas.getContext('2d')!
 
-    // 恢复离屏内容，再画预览
+    // 预览绘制在主 Canvas 上：先绘制离屏内容（包含历史），再叠加当前预览
     ctx.clearRect(0, 0, canvas.width, canvas.height)
     ctx.drawImage(offscreenCanvas, 0, 0)
 
     ctx.save()
-    ctx.strokeStyle = currentColor.value
+    // 预览也应用视图变换
+    ctx.translate(view.value.offsetX, view.value.offsetY)
+    ctx.scale(view.value.scale, view.value.scale)
+
+    ctx.strokeStyle = currentTool.value === 'eraser' ? '#ffffff' : currentColor.value
     ctx.lineWidth = currentLineWidth.value
     ctx.lineCap = 'round'
     ctx.lineJoin = 'round'
 
     switch (currentTool.value) {
-      case 'pen': {
+      case 'pen':
+      case 'eraser': {
         ctx.beginPath()
         ctx.moveTo(currentPoints[currentPoints.length - 1].x, currentPoints[currentPoints.length - 1].y)
-        ctx.lineTo(point.x, point.y)
+        ctx.lineTo(canvasPoint.x, canvasPoint.y)
         ctx.stroke()
-        currentPoints.push(point)
+        currentPoints.push(canvasPoint)
         break
       }
       case 'rect': {
-        const x = Math.min(startPoint!.x, point.x)
-        const y = Math.min(startPoint!.y, point.y)
-        const w = Math.abs(point.x - startPoint!.x)
-        const h = Math.abs(point.y - startPoint!.y)
+        const x = Math.min(startPoint!.x, canvasPoint.x)
+        const y = Math.min(startPoint!.y, canvasPoint.y)
+        const w = Math.abs(canvasPoint.x - startPoint!.x)
+        const h = Math.abs(canvasPoint.y - startPoint!.y)
         ctx.strokeRect(x, y, w, h)
         break
       }
       case 'circle': {
-        const dx = point.x - startPoint!.x
-        const dy = point.y - startPoint!.y
+        const dx = canvasPoint.x - startPoint!.x
+        const dy = canvasPoint.y - startPoint!.y
         const radius = Math.sqrt(dx * dx + dy * dy)
         ctx.beginPath()
         ctx.arc(startPoint!.x, startPoint!.y, radius, 0, Math.PI * 2)
@@ -265,20 +343,30 @@ export function useDrawingEngine(userId: number) {
   }
 
   function onPointerUp(e: MouseEvent | TouchEvent): DrawAction | null {
+    const canvas = mainCanvasRef.value!
+
+    if (isPanning) {
+      isPanning = false
+      lastPanPoint = null
+      return null
+    }
+
     if (!isDrawing) return null
     isDrawing = false
-    const canvas = mainCanvasRef.value!
-    const point = getCanvasPoint(e, canvas)
+
+    const screenPoint = getCanvasPoint(e, canvas)
+    const canvasPoint = screenToCanvas(screenPoint.x, screenPoint.y)
 
     let action: DrawAction | null = null
 
     switch (currentTool.value) {
-      case 'pen': {
+      case 'pen':
+      case 'eraser': {
         if (currentPoints.length > 1) {
           action = {
             id: generateId(),
             userId,
-            tool: 'pen',
+            tool: currentTool.value,
             color: currentColor.value,
             lineWidth: currentLineWidth.value,
             data: { points: [...currentPoints] },
@@ -287,10 +375,10 @@ export function useDrawingEngine(userId: number) {
         break
       }
       case 'rect': {
-        const x = Math.min(startPoint!.x, point.x)
-        const y = Math.min(startPoint!.y, point.y)
-        const w = Math.abs(point.x - startPoint!.x)
-        const h = Math.abs(point.y - startPoint!.y)
+        const x = Math.min(startPoint!.x, canvasPoint.x)
+        const y = Math.min(startPoint!.y, canvasPoint.y)
+        const w = Math.abs(canvasPoint.x - startPoint!.x)
+        const h = Math.abs(canvasPoint.y - startPoint!.y)
         if (w > 0 || h > 0) {
           action = {
             id: generateId(),
@@ -304,8 +392,8 @@ export function useDrawingEngine(userId: number) {
         break
       }
       case 'circle': {
-        const dx = point.x - startPoint!.x
-        const dy = point.y - startPoint!.y
+        const dx = canvasPoint.x - startPoint!.x
+        const dy = canvasPoint.y - startPoint!.y
         const radius = Math.sqrt(dx * dx + dy * dy)
         if (radius > 0) {
           action = {
@@ -322,14 +410,33 @@ export function useDrawingEngine(userId: number) {
     }
 
     if (action) {
-      pushAction(action, true)   // 本地操作
+      pushAction(action, true)
     }
-    // 最终刷新，保证画面干净
     requestRedraw()
     return action
   }
 
-  // ---------- 文本工具：创建文字指令 ----------
+  // 鼠标滚轮缩放
+  function onWheel(e: WheelEvent) {
+    e.preventDefault()
+    const canvas = mainCanvasRef.value!
+    const screenPoint = getCanvasPoint(e, canvas)
+    const delta = e.deltaY > 0 ? 0.9 : 1.1
+    const newScale = Math.min(10, Math.max(0.1, view.value.scale * delta))
+
+    // 以鼠标位置为中心缩放
+    const worldX = (screenPoint.x - view.value.offsetX) / view.value.scale
+    const worldY = (screenPoint.y - view.value.offsetY) / view.value.scale
+
+    view.value = {
+      scale: newScale,
+      offsetX: screenPoint.x - worldX * newScale,
+      offsetY: screenPoint.y - worldY * newScale,
+    }
+    requestRedraw()
+  }
+
+  // ---------- 外部文本方法 ----------
   function addTextAction(text: string, point: Point) {
     const action: DrawAction = {
       id: generateId(),
@@ -343,11 +450,25 @@ export function useDrawingEngine(userId: number) {
     return action
   }
 
-  // ---------- 外部调用 API ----------
-  function setColor(color: string) { currentColor.value = color }
+  // ---------- API ----------
+  function setColor(color: string) {
+    currentColor.value = color
+    
+    if (currentTool.value === 'eraser') {
+    currentColor.value = '#ffffff'
+    return
+    }
+  }
   function setLineWidth(w: number) { currentLineWidth.value = w }
-  function setTool(tool: ToolType) { currentTool.value = tool }
-
+  function setTool(tool: ToolType) {
+    if (tool === 'eraser') {
+      currentTool.value = 'eraser'
+      currentColor.value = '#ffffff'
+      return
+    }
+    currentTool.value = tool
+    if (currentColor.value === '#ffffff') currentColor.value = '#000000'
+  }
   function clearCanvas() {
     allActions.value = []
     undoStack.value = []
@@ -355,7 +476,6 @@ export function useDrawingEngine(userId: number) {
     updateUndoRedoState()
     requestRedraw()
   }
-
   function loadSnapshot(actions: DrawAction[]) {
     allActions.value = actions
     undoStack.value = []
@@ -363,15 +483,22 @@ export function useDrawingEngine(userId: number) {
     updateUndoRedoState()
     requestRedraw()
   }
-
-  // 远程绘制：直接追加非本地指令
   function drawRemote(action: DrawAction) {
-    pushAction(action, false)   // 不是本地操作，不加入 undo/redo
+    // 兼容旧版消息格式：将 points: number[][] 转为 PenData
+    if ((action as any).points && !(action as any).data) {
+      const pts = normalizeOldPoints((action as any).points)
+      if (pts) {
+        action = { ...action, data: { points: pts } }
+      }
+    }
+    pushAction(action, false)
   }
-
   function registerTextInput(fn: (point: Point) => void) {
     showTextInput = fn
   }
+
+  // 暴露视图状态供快捷键/UI使用
+  function getView() { return view }
 
   return {
     mainCanvasRef,
@@ -380,11 +507,13 @@ export function useDrawingEngine(userId: number) {
     currentColor,
     currentLineWidth,
     currentTool,
+    view,
     initCanvas,
     handleResize,
     onPointerDown,
     onPointerMove,
     onPointerUp,
+    onWheel,
     setColor,
     setLineWidth,
     setTool,
@@ -395,6 +524,20 @@ export function useDrawingEngine(userId: number) {
     drawRemote,
     addTextAction,
     registerTextInput,
-    pushAction,   // 供极端情况使用
+    pushAction,
+    getView,
+    screenToCanvas,
+
+    requestRedraw,         // 暴露重绘
+    zoomIn: () => {
+      const newScale = Math.min(10, view.value.scale * 1.1);
+      view.value = { ...view.value, scale: newScale };
+      requestRedraw();
+    },
+    zoomOut: () => {
+     const newScale = Math.max(0.1, view.value.scale * 0.9);
+      view.value = { ...view.value, scale: newScale };
+      requestRedraw();
+    },
   }
 }
